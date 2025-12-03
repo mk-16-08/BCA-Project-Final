@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthSync – AI Wellness Tracker</title>
+    
+    <!-- External Libraries (CDNs) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --primary: #2A9D8F;
+            --primary-dark: #21867a;
+            --secondary: #264653;
+            --accent: #E9C46A;
+            --danger: #e76f51;
+            --bg: #F4F4F9;
+            --card-bg: #ffffff;
+            --text: #333;
+            --text-muted: #666;
+            --border: #eee;
+            --shadow: rgba(0,0,0,0.05);
+            --chat-bg: #fff;
+            --chat-user: #2A9D8F;
+            --chat-bot: #f1f1f1;
+        }
+
+        /* Dark Mode Variables */
+        body.dark-mode {
+            --bg: #1a1a2e;
+            --card-bg: #16213e;
+            --text: #eaeaea;
+            --text-muted: #a0a0a0;
+            --border: #2c3e50;
+            --shadow: rgba(0,0,0,0.3);
+            --secondary: #0f3460;
+            --chat-bg: #16213e;
+            --chat-user: #21867a;
+            --chat-bot: #2c3e50;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s; }
+        body { background-color: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+        /* Navigation */
+        .navbar {
+            background: var(--secondary);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .logo { font-size: 1.5rem; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+        
+        .nav-actions { display: flex; gap: 10px; align-items: center; }
+        .icon-btn { 
+            background: rgba(255,255,255,0.1); border: none; color: white; 
+            width: 35px; height: 35px; border-radius: 50%; cursor: pointer; 
+            display: flex; align-items: center; justify-content: center;
+        }
+        .icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Layout */
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; flex: 1; width: 100%; }
+        .hidden { display: none !important; }
+
+        /* Auth Screen */
+        .auth-wrapper { 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            min-height: 80vh; text-align: center; 
+        }
+        .auth-card {
+            background: var(--card-bg); padding: 2.5rem; border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px;
+            border: 1px solid var(--border);
+        }
+        .auth-tabs { display: flex; margin-bottom: 1.5rem; border-bottom: 2px solid var(--border); }
+        .tab-btn { 
+            flex: 1; padding: 12px; background: none; border: none; cursor: pointer; 
+            font-weight: 600; color: var(--text-muted); font-size: 1rem;
+        }
+        .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        
+        .input-group { position: relative; margin-bottom: 1.2rem; text-align: left; }
+        .input-group i { position: absolute; left: 12px; top: 14px; color: var(--text-muted); }
+        .input-group input { 
+            width: 100%; padding: 12px 12px 12px 40px; border: 1px solid var(--border); 
+            border-radius: 8px; font-size: 0.95rem; outline: none; 
+            background: var(--bg); color: var(--text);
+        }
+        .input-group input:focus { border-color: var(--primary); }
+        
+        /* Dashboard Grid */
+        .dashboard-grid { 
+            display: grid; grid-template-columns: 320px 1fr; gap: 1.5rem; 
+            padding-bottom: 2rem;
+        }
+        
+        /* Cards */
+        .card { 
+            background: var(--card-bg); padding: 1.5rem; border-radius: 12px; 
+            box-shadow: 0 4px 6px var(--shadow); margin-bottom: 1.5rem; 
+            border: 1px solid var(--border);
+        }
+        .card h2, .card h3 { 
+            font-size: 1.2rem; margin-bottom: 1rem; color: var(--primary); 
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        /* Progress Section */
+        .progress-row {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;
+        }
+        .progress-card {
+            background: var(--card-bg); padding: 1rem; border-radius: 12px;
+            text-align: center; border: 1px solid var(--border);
+            box-shadow: 0 2px 4px var(--shadow);
+            position: relative; overflow: hidden;
+        }
+        .progress-ring {
+            width: 80px; height: 80px; margin: 0 auto 10px; position: relative;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%;
+            background: conic-gradient(var(--primary) var(--progress, 0%), var(--border) 0%);
+        }
+        .progress-ring::before {
+            content: ''; position: absolute; width: 64px; height: 64px; 
+            background: var(--card-bg); border-radius: 50%;
+        }
+        .progress-value { position: absolute; font-weight: bold; font-size: 0.9rem; z-index: 1; }
+        .progress-label { font-size: 0.85rem; color: var(--text-muted); }
+        .progress-edit { 
+            position: absolute; top: 5px; right: 5px; font-size: 0.7rem; 
+            color: var(--text-muted); cursor: pointer; 
+        }
+
+        /* Forms */
+        .form-row { margin-bottom: 1rem; }
+        .form-row label { display: block; font-size: 0.85rem; margin-bottom: 5px; color: var(--text-muted); font-weight: 600; }
+        .form-row input { 
+            width: 100%; padding: 10px; border: 1px solid var(--border); 
+            border-radius: 6px; background: var(--bg); color: var(--text);
+        }
+        .split-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        
+        /* Buttons */
+        .btn { 
+            border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; 
+            font-weight: 600; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-primary { background: var(--primary); color: white; width: 100%; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-secondary { background: var(--secondary); color: white; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-danger { background: var(--danger); color: white; padding: 5px 10px; font-size: 0.8rem; border-radius: 4px; }
+        .btn-sm { padding: 6px 12px; font-size: 0.85rem; width: auto; }
+
+        /* History Table */
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); font-weight: 600; }
+        tr:hover { background: rgba(0,0,0,0.02); }
+
+        /* AI Section */
+        .ai-card { border-left: 5px solid var(--accent); position: relative; }
+        .ai-content { 
+            background: rgba(233, 196, 106, 0.1); border: 1px dashed var(--accent); padding: 15px; 
+            border-radius: 8px; margin-top: 10px; font-style: italic; color: var(--text);
+            min-height: 60px; display: flex; align-items: center;
+        }
+
+        /* Charts Area */
+        .charts-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .chart-container { position: relative; height: 250px; width: 100%; }
+
+        /* Toast Notification */
+        .toast-container {
+            position: fixed; bottom: 20px; right: 20px; z-index: 1000;
+        }
+        .toast {
+            background: var(--secondary); color: white; padding: 15px 25px;
+            border-radius: 8px; margin-top: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            display: flex; align-items: center; gap: 10px; opacity: 0;
+            transform: translateY(20px); transition: 0.3s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { border-left: 5px solid var(--primary); }
+        .toast.error { border-left: 5px solid var(--danger); }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 200; display: flex;
+            align-items: center; justify-content: center;
+        }
+        .modal {
+            background: var(--card-bg); padding: 2rem; border-radius: 12px;
+            width: 90%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        /* --- CHATBOT WIDGET STYLES --- */
+        .chat-widget {
+            position: fixed; bottom: 80px; right: 20px; z-index: 900;
+            display: flex; flex-direction: column; align-items: flex-end;
+        }
+        .chat-btn {
+            width: 60px; height: 60px; border-radius: 50%;
+            background: var(--primary); color: white; border: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); cursor: pointer;
+            font-size: 1.5rem; display: flex; align-items: center; justify-content: center;
+            transition: transform 0.2s;
+        }
+        .chat-btn:hover { transform: scale(1.05); }
+        
+        .chat-window {
+            width: 350px; height: 450px; background: var(--chat-bg);
+            border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px; display: flex; flex-direction: column;
+            border: 1px solid var(--border); overflow: hidden;
+            transform-origin: bottom right; transition: all 0.3s ease;
+            opacity: 0; pointer-events: none; transform: scale(0.8);
+        }
+        .chat-window.open { opacity: 1; pointer-events: all; transform: scale(1); }
+        
+        .chat-header {
+            background: var(--secondary); color: white; padding: 15px;
+            display: flex; justify-content: space-between; align-items: center;
+            font-weight: 600;
+        }
+        .chat-header .close-chat { cursor: pointer; font-size: 1.1rem; }
+        
+        .chat-messages {
+            flex: 1; padding: 15px; overflow-y: auto; background: var(--chat-bg);
+        }
+        .message { margin-bottom: 10px; max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.4; }
+        .message.bot { background: var(--chat-bot); color: var(--text); border-bottom-left-radius: 2px; align-self: flex-start; }
+        .message.user { background: var(--chat-user); color: white; border-bottom-right-radius: 2px; margin-left: auto; }
+        
+        .chat-input-area {
+            padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 10px;
+        }
+        .chat-input-area input {
+            flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 20px;
+            background: var(--bg); color: var(--text); outline: none;
+        }
+        .chat-input-area button {
+            background: var(--primary); color: white; border: none; width: 40px; height: 40px;
+            border-radius: 50%; cursor: pointer;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .charts-wrapper { grid-template-columns: 1fr; }
+            .chat-window { width: 300px; height: 400px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <div class="logo"><i class="fas fa-heartbeat"></i> HealthSync</div>
+        <div class="nav-actions" id="nav-actions">
+            <!-- Injected via JS -->
+            <button class="icon-btn" onclick="toggleTheme()" title="Toggle Dark Mode">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- CONTAINER -->
+    <div class="container">
+        
+        <!-- AUTH VIEW -->
+        <div id="auth-view" class="auth-wrapper">
+            <div class="hero-text" style="margin-bottom: 2rem;">
+                <h1>Your AI-Powered Wellness Journey</h1>
+                <p>Track Sleep, Water, Steps, Calories, and BP with smart insights.</p>
+            </div>
+            
+            <div class="auth-card">
+                <div class="auth-tabs">
+                    <button class="tab-btn active" onclick="switchAuth('login')">Login</button>
+                    <button class="tab-btn" onclick="switchAuth('signup')">Sign Up</button>
+                </div>
+
+                <!-- Login Form -->
+                <form id="login-form" onsubmit="handleLogin(event)">
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="login-user" placeholder="Username" required value="Guest">
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="login-pass" placeholder="Password" required value="password">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+
+                <!-- Signup Form -->
+                <form id="signup-form" class="hidden" onsubmit="handleSignup(event)">
+                    <div class="input-group">
+                        <i class="fas fa-user-plus"></i>
+                        <input type="text" id="signup-user" placeholder="Choose Username" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="signup-pass" placeholder="Create Password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create Account</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- DASHBOARD VIEW -->
+        <div id="dashboard-view" class="dashboard-grid hidden">
+            
+            <!-- LEFT COLUMN: Logger -->
+            <div class="sidebar">
+                <div class="card">
+                    <h2><i class="fas fa-plus-circle"></i> Daily Log</h2>
+                    <form onsubmit="handleLog(event)">
+                        <div class="form-row">
+                            <label>Sleep (Hours)</label>
+                            <input type="number" step="0.1" id="log-sleep" placeholder="e.g. 7.5" required>
+                        </div>
+                        <div class="form-row">
+                            <label>Water (ml)</label>
+                            <input type="number" id="log-water" placeholder="e.g. 2000" required>
+                        </div>
+                        <div class="form-row">
+                            <label>Steps</label>
+                            <input type="number" id="log-steps" placeholder="e.g. 8000" required>
+                        </div>
+                        <div class="form-row">
+                            <label>Calories (kcal)</label>
+                            <input type="number" id="log-cals" placeholder="e.g. 2200" required>
+                        </div>
+                        <div class="form-row">
+                            <label>Blood Pressure (Sys/Dia)</label>
+                            <div class="split-row">
+                                <input type="number" id="log-sys" placeholder="120" required>
+                                <input type="number" id="log-dia" placeholder="80" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <label>Body Metrics (Optional)</label>
+                            <div class="split-row">
+                                <input type="number" id="log-height" placeholder="cm">
+                                <input type="number" id="log-weight" placeholder="kg">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Today's Log</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3><i class="fas fa-user-cog"></i> Quick Stats</h3>
+                    <div id="quick-stats-content">
+                        <p>BMI: <strong id="disp-bmi">--</strong></p>
+                        <p>Avg Sleep: <strong id="disp-sleep">--</strong> hrs</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Analytics -->
+            <div class="main-content">
+                
+                <!-- Progress Widgets -->
+                <div class="progress-row">
+                    <div class="progress-card">
+                        <i class="fas fa-cog progress-edit" onclick="openGoalModal()" title="Edit Goals"></i>
+                        <div class="progress-ring" id="prog-sleep-ring" style="--progress: 0%">
+                            <span class="progress-value" id="prog-sleep-val">0h</span>
+                        </div>
+                        <div class="progress-label"><i class="fas fa-bed"></i> Sleep Goal</div>
+                    </div>
+                    <div class="progress-card">
+                        <div class="progress-ring" id="prog-water-ring" style="--progress: 0%">
+                            <span class="progress-value" id="prog-water-val">0ml</span>
+                        </div>
+                        <div class="progress-label"><i class="fas fa-tint"></i> Water Goal</div>
+                    </div>
+                    <div class="progress-card">
+                        <div class="progress-ring" id="prog-steps-ring" style="--progress: 0%">
+                            <span class="progress-value" id="prog-steps-val">0</span>
+                        </div>
+                        <div class="progress-label"><i class="fas fa-walking"></i> Step Goal</div>
+                    </div>
+                    <!-- New Calorie Ring -->
+                    <div class="progress-card">
+                        <div class="progress-ring" id="prog-cals-ring" style="--progress: 0%">
+                            <span class="progress-value" id="prog-cals-val">0</span>
+                        </div>
+                        <div class="progress-label"><i class="fas fa-fire"></i> Calorie Goal</div>
+                    </div>
+                </div>
+
+                <!-- AI Section -->
+                <div class="card ai-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h2><i class="fas fa-robot"></i> AI Health Coach</h2>
+                        <button onclick="generateAIAdvice()" class="btn btn-secondary btn-sm">Refresh Advice</button>
+                    </div>
+                    <div class="ai-content" id="ai-advice-box">
+                        <i class="fas fa-spinner fa-spin hidden"></i> &nbsp; 
+                        Log your data to get personalized AI suggestions.
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="charts-wrapper">
+                    <div class="card">
+                        <h3>Sleep & Calories</h3>
+                        <div class="chart-container">
+                            <canvas id="sleepChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3>Hydration & Steps</h3>
+                        <div class="chart-container">
+                            <canvas id="activityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <!-- New Chart Row for Weight -->
+                <div class="card">
+                    <h3>Weight & BMI Trend</h3>
+                    <div class="chart-container" style="height: 200px;">
+                        <canvas id="weightChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- History Table -->
+                <div class="card">
+                    <h3><i class="fas fa-history"></i> History</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Sleep</th>
+                                    <th>Water</th>
+                                    <th>Steps</th>
+                                    <th>Cals</th>
+                                    <th>Weight</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-body">
+                                <!-- JS Injected -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+                    <div>
+                        <h3>Data Actions</h3>
+                        <p style="font-size:0.9rem; color:var(--text-muted);">Manage your health data.</p>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <button onclick="exportCSV()" class="btn btn-success"><i class="fas fa-file-csv"></i> Export CSV</button>
+                        <button onclick="generatePDF()" class="btn btn-secondary"><i class="fas fa-file-pdf"></i> Download PDF</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- CHATBOT WIDGET -->
+    <div id="chat-widget" class="chat-widget hidden">
+        <div class="chat-window" id="chat-window">
+            <div class="chat-header">
+                <span><i class="fas fa-robot"></i> HealthSync Assistant</span>
+                <span class="close-chat" onclick="toggleChat()"><i class="fas fa-times"></i></span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message bot">Hello! I am your AI Health Assistant. Ask me anything like "How was my sleep yesterday?" or "How many calories did I burn?"</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Ask about your health..." onkeypress="handleChatKey(event)">
+                <button onclick="sendChatMessage()"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+        <button class="chat-btn" onclick="toggleChat()">
+            <i class="fas fa-comment-dots"></i>
+        </button>
+    </div>
+
+    <!-- GOAL SETTING MODAL -->
+    <div id="goal-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>Set Daily Goals</h3>
+            <div class="form-row">
+                <label>Sleep Goal (hours)</label>
+                <input type="number" id="goal-sleep" value="8">
+            </div>
+            <div class="form-row">
+                <label>Water Goal (ml)</label>
+                <input type="number" id="goal-water" value="2500">
+            </div>
+            <div class="form-row">
+                <label>Steps Goal</label>
+                <input type="number" id="goal-steps" value="10000">
+            </div>
+            <div class="form-row">
+                <label>Daily Calories Goal</label>
+                <input type="number" id="goal-cals" value="2200">
+            </div>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button class="btn btn-primary" onclick="saveGoals()">Save Goals</button>
+                <button class="btn btn-outline" onclick="closeGoalModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        /* --- JAVASCRIPT LOGIC --- */
+
+        // --- STATE MANAGEMENT ---
+        let currentUser = null;
+        let healthData = [];
+        let userGoals = { sleep: 8, water: 2500, steps: 10000, cals: 2200 };
+        let sleepChart, activityChart, weightChart;
+        let isChatOpen = false;
+
+        // --- THEME ---
+        function toggleTheme() {
+            document.body.classList.toggle('dark-mode');
+            const icon = document.querySelector('.icon-btn i');
+            if(document.body.classList.contains('dark-mode')) {
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+            } else {
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+            }
+        }
+
+        // --- TOASTS ---
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> ${message}`;
+            container.appendChild(toast);
+            
+            // Animation
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- AUTH FUNCTIONS ---
+        function switchAuth(type) {
+            const loginForm = document.getElementById('login-form');
+            const signupForm = document.getElementById('signup-form');
+            const btns = document.querySelectorAll('.tab-btn');
+
+            if(type === 'login') {
+                loginForm.classList.remove('hidden');
+                signupForm.classList.add('hidden');
+                btns[0].classList.add('active');
+                btns[1].classList.remove('active');
+            } else {
+                loginForm.classList.add('hidden');
+                signupForm.classList.remove('hidden');
+                btns[0].classList.remove('active');
+                btns[1].classList.add('active');
+            }
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('login-user').value;
+            if(username) {
+                loginUser(username);
+            }
+        }
+
+        function handleSignup(e) {
+            e.preventDefault();
+            const username = document.getElementById('signup-user').value;
+            if(username) {
+                showToast('Account created! Logging you in...', 'success');
+                loginUser(username);
+            }
+        }
+
+        function loginUser(username) {
+            currentUser = username;
+            document.getElementById('auth-view').classList.add('hidden');
+            document.getElementById('dashboard-view').classList.remove('hidden');
+            document.getElementById('chat-widget').classList.remove('hidden'); // Show Chat
+            
+            // Update Navbar
+            const nav = document.getElementById('nav-actions');
+            nav.innerHTML = `
+                <span style="margin-right:15px; font-weight:600;">Hi, ${username}</span>
+                <button class="icon-btn" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
+                <button class="btn btn-sm btn-outline" style="border-color:white; color:white; margin-left:10px;" onclick="logout()">Logout</button>
+            `;
+            
+            loadData();
+            initCharts();
+            generateAIAdvice();
+        }
+
+        function logout() {
+            currentUser = null;
+            document.getElementById('auth-view').classList.remove('hidden');
+            document.getElementById('dashboard-view').classList.add('hidden');
+            document.getElementById('chat-widget').classList.add('hidden');
+            document.getElementById('nav-actions').innerHTML = `<button class="icon-btn" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>`;
+        }
+
+        // --- DATA MANAGEMENT ---
+        function loadData() {
+            // Load Data
+            const storedData = localStorage.getItem(`healthsync_${currentUser}_data`);
+            if (storedData) {
+                healthData = JSON.parse(storedData);
+            } else {
+                // Mock Data for demo (Updated with Cals & Weight)
+                healthData = [
+                    { date: '2023-10-01', sleep: 6.5, water: 1500, steps: 5000, cals: 2100, weight: 70.5, sys: 125, dia: 82, bmi: 24.1 },
+                    { date: '2023-10-02', sleep: 7.0, water: 2100, steps: 8500, cals: 2250, weight: 70.3, sys: 120, dia: 80, bmi: 24.0 },
+                    { date: '2023-10-03', sleep: 5.5, water: 1800, steps: 6000, cals: 1900, weight: 70.0, sys: 130, dia: 85, bmi: 23.9 },
+                    { date: '2023-10-04', sleep: 8.0, water: 2500, steps: 10200, cals: 2400, weight: 69.8, sys: 118, dia: 78, bmi: 23.8 },
+                ];
+                saveData();
+            }
+
+            // Load Goals
+            const storedGoals = localStorage.getItem(`healthsync_${currentUser}_goals`);
+            if(storedGoals) userGoals = JSON.parse(storedGoals);
+
+            updateUI();
+        }
+
+        function saveData() {
+            localStorage.setItem(`healthsync_${currentUser}_data`, JSON.stringify(healthData));
+            updateUI();
+        }
+
+        function handleLog(e) {
+            e.preventDefault();
+            
+            const sleep = parseFloat(document.getElementById('log-sleep').value);
+            const water = parseInt(document.getElementById('log-water').value);
+            const steps = parseInt(document.getElementById('log-steps').value);
+            const cals = parseInt(document.getElementById('log-cals').value);
+            const sys = parseInt(document.getElementById('log-sys').value);
+            const dia = parseInt(document.getElementById('log-dia').value);
+            const h = parseFloat(document.getElementById('log-height').value);
+            const w = parseFloat(document.getElementById('log-weight').value);
+            
+            let bmi = null;
+            if(h && w) {
+                bmi = (w / ((h/100) * (h/100))).toFixed(1);
+            } else {
+                const last = healthData[healthData.length-1];
+                bmi = last ? last.bmi : '--';
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            
+            // Check if entry exists for today
+            const existingIndex = healthData.findIndex(entry => entry.date === today);
+            const entry = { date: today, sleep, water, steps, cals: cals || 0, weight: w || 0, sys, dia, bmi };
+
+            if(existingIndex >= 0) {
+                // Preserve weight if not entered in update but present in previous data
+                if(!w && healthData[existingIndex].weight) entry.weight = healthData[existingIndex].weight;
+                healthData[existingIndex] = entry; // Update
+                showToast("Today's log updated!", "success");
+            } else {
+                healthData.push(entry); // Create
+                showToast("Entry Logged Successfully!", "success");
+            }
+            
+            saveData();
+            generateAIAdvice();
+        }
+
+        function deleteEntry(index) {
+            if(confirm("Are you sure you want to delete this log?")) {
+                healthData.splice(index, 1);
+                saveData();
+                showToast("Entry deleted", "error");
+            }
+        }
+
+        // --- UI UPDATES ---
+        function updateUI() {
+            updateCharts();
+            updateHistoryTable();
+            updateQuickStats();
+            updateProgress();
+        }
+
+        function updateHistoryTable() {
+            const tbody = document.getElementById('history-body');
+            tbody.innerHTML = '';
+            
+            // Sort by date desc
+            const sorted = [...healthData].sort((a,b) => new Date(b.date) - new Date(a.date));
+            
+            sorted.forEach((log) => {
+                // Find original index for deletion
+                const originalIndex = healthData.indexOf(log);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${log.date}</td>
+                    <td>${log.sleep}h</td>
+                    <td>${log.water}ml</td>
+                    <td>${log.steps}</td>
+                    <td>${log.cals || '-'}</td>
+                    <td>${log.weight || '-'}kg</td>
+                    <td><button class="btn-danger" onclick="deleteEntry(${originalIndex})"><i class="fas fa-trash"></i></button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateQuickStats() {
+            if(healthData.length === 0) return;
+            const last = healthData[healthData.length-1];
+            
+            // Calculate Avg Sleep
+            const totalSleep = healthData.reduce((acc, curr) => acc + curr.sleep, 0);
+            const avgSleep = (totalSleep / healthData.length).toFixed(1);
+            
+            document.getElementById('disp-bmi').innerText = last.bmi || '--';
+            document.getElementById('disp-sleep').innerText = avgSleep;
+        }
+
+        function updateProgress() {
+            const today = new Date().toISOString().split('T')[0];
+            const todayLog = healthData.find(d => d.date === today) || { sleep: 0, water: 0, steps: 0, cals: 0 };
+
+            // Helper to set ring
+            const setRing = (id, val, goal, unit) => {
+                const pct = Math.min((val / goal) * 100, 100);
+                const ring = document.getElementById(id + '-ring');
+                const text = document.getElementById(id + '-val');
+                
+                ring.style.setProperty('--progress', `${pct}%`);
+                text.innerText = `${val}${unit}`;
+                
+                // Dynamic Color
+                if(pct >= 100) ring.style.color = '#2A9D8F';
+                else ring.style.color = '#333';
+            };
+
+            setRing('prog-sleep', todayLog.sleep, userGoals.sleep, 'h');
+            setRing('prog-water', todayLog.water, userGoals.water, 'ml');
+            setRing('prog-steps', todayLog.steps, userGoals.steps, '');
+            setRing('prog-cals', todayLog.cals, userGoals.cals, '');
+        }
+
+        // --- GOAL SETTING ---
+        function openGoalModal() {
+            document.getElementById('goal-sleep').value = userGoals.sleep;
+            document.getElementById('goal-water').value = userGoals.water;
+            document.getElementById('goal-steps').value = userGoals.steps;
+            document.getElementById('goal-cals').value = userGoals.cals || 2200;
+            document.getElementById('goal-modal').classList.remove('hidden');
+        }
+
+        function closeGoalModal() {
+            document.getElementById('goal-modal').classList.add('hidden');
+        }
+
+        function saveGoals() {
+            userGoals.sleep = parseFloat(document.getElementById('goal-sleep').value);
+            userGoals.water = parseInt(document.getElementById('goal-water').value);
+            userGoals.steps = parseInt(document.getElementById('goal-steps').value);
+            userGoals.cals = parseInt(document.getElementById('goal-cals').value);
+            
+            localStorage.setItem(`healthsync_${currentUser}_goals`, JSON.stringify(userGoals));
+            updateProgress();
+            closeGoalModal();
+            showToast("Goals updated successfully!");
+        }
+
+        // --- CHARTS ---
+        function initCharts() {
+            const ctxSleep = document.getElementById('sleepChart').getContext('2d');
+            const ctxActivity = document.getElementById('activityChart').getContext('2d');
+            const ctxWeight = document.getElementById('weightChart').getContext('2d');
+
+            // Sleep + Calories Mixed Chart
+            sleepChart = new Chart(ctxSleep, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Sleep (h)', data: [], type: 'line', borderColor: '#264653', tension: 0.4, yAxisID: 'y' },
+                        { label: 'Calories', data: [], backgroundColor: 'rgba(231, 111, 81, 0.7)', yAxisID: 'y1' }
+                    ]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { 
+                        y: { position: 'left', title: { display:true, text:'Hours' } }, 
+                        y1: { position: 'right', grid: {drawOnChartArea: false}, title: { display:true, text:'Kcal' } } 
+                    }
+                }
+            });
+
+            // Activity Chart
+            activityChart = new Chart(ctxActivity, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Water (ml)', data: [], backgroundColor: '#2A9D8F', yAxisID: 'y' },
+                        { label: 'Steps', data: [], type: 'line', borderColor: '#E9C46A', borderWidth: 3, yAxisID: 'y1' }
+                    ]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } }
+                }
+            });
+
+            // Weight Chart
+            weightChart = new Chart(ctxWeight, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Weight (kg)', data: [], borderColor: '#e76f51', backgroundColor: 'rgba(231, 111, 81, 0.1)', fill: true, tension: 0.3 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            updateCharts();
+        }
+
+        function updateCharts() {
+            if(!sleepChart || !activityChart || !weightChart) return;
+            const recent = healthData.slice(-7);
+            const labels = recent.map(d => d.date);
+
+            // Sleep & Calories
+            sleepChart.data.labels = labels;
+            sleepChart.data.datasets[0].data = recent.map(d => d.sleep);
+            sleepChart.data.datasets[1].data = recent.map(d => d.cals || 0);
+            sleepChart.update();
+
+            // Activity
+            activityChart.data.labels = labels;
+            activityChart.data.datasets[0].data = recent.map(d => d.water);
+            activityChart.data.datasets[1].data = recent.map(d => d.steps);
+            activityChart.update();
+
+            // Weight
+            weightChart.data.labels = labels;
+            weightChart.data.datasets[0].data = recent.map(d => d.weight || null); // Handle missing weights
+            weightChart.update();
+        }
+
+        // --- CHATBOT & AI LOGIC ---
+        function toggleChat() {
+            const window = document.getElementById('chat-window');
+            isChatOpen = !isChatOpen;
+            if(isChatOpen) {
+                window.classList.add('open');
+                document.getElementById('chat-input').focus();
+            } else {
+                window.classList.remove('open');
+            }
+        }
+
+        function handleChatKey(e) {
+            if(e.key === 'Enter') sendChatMessage();
+        }
+
+        function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const msg = input.value.trim();
+            if(!msg) return;
+
+            addMessage(msg, 'user');
+            input.value = '';
+
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message bot';
+            typingDiv.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
+            document.getElementById('chat-messages').appendChild(typingDiv);
+            scrollToChatBottom();
+
+            setTimeout(() => {
+                typingDiv.remove();
+                const response = generateContextualResponse(msg);
+                addMessage(response, 'bot');
+            }, 800);
+        }
+
+        function addMessage(text, sender) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            div.innerText = text;
+            document.getElementById('chat-messages').appendChild(div);
+            scrollToChatBottom();
+        }
+
+        function scrollToChatBottom() {
+            const chatBox = document.getElementById('chat-messages');
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function generateContextualResponse(input) {
+            input = input.toLowerCase();
+            const last = healthData.length > 0 ? healthData[healthData.length - 1] : null;
+            
+            if (!last) return "I don't see any logs yet. Please add a daily log so I can analyze your health.";
+
+            if (input.includes('hello') || input.includes('hi')) return `Hello ${currentUser}! How can I help you today?`;
+
+            if (input.includes('sleep')) return `You slept ${last.sleep} hours yesterday. Goal: ${userGoals.sleep}h.`;
+            
+            if (input.includes('water')) return `You drank ${last.water}ml. Goal: ${userGoals.water}ml.`;
+
+            if (input.includes('calories') || input.includes('eat')) return `You consumed ${last.cals || 0} calories. Goal: ${userGoals.cals || 2200}.`;
+            
+            if (input.includes('weight')) return `Your last weight was ${last.weight || 'unknown'} kg.`;
+
+            if (input.includes('advice')) return "Based on your logs: Keep your hydration up and aim for 8 hours of sleep!";
+
+            return "I can answer questions about Sleep, Water, Calories, Weight, or Steps.";
+        }
+
+        // Original AI Advice for Dashboard
+        function generateAIAdvice() {
+            const box = document.getElementById('ai-advice-box');
+            box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing your data...';
+
+            setTimeout(() => {
+                if(healthData.length === 0) {
+                    box.innerText = "Please log some data first so I can analyze your health!";
+                    return;
+                }
+                const last = healthData[healthData.length - 1];
+                let advice = "";
+
+                if (last.sleep < userGoals.sleep) advice += `<span style="color:var(--danger)"><b>Sleep:</b></span> You missed your goal of ${userGoals.sleep}h. Try reading before bed. `;
+                else advice += `<span style="color:var(--primary)"><b>Sleep:</b></span> Great job meeting your sleep goal! `;
+
+                if (last.cals > userGoals.cals) advice += `<br><span style="color:var(--danger)"><b>Calories:</b></span> You exceeded your goal of ${userGoals.cals}. Try a light dinner.`;
+                else advice += `<br><span style="color:var(--primary)"><b>Calories:</b></span> You are within your calorie limit.`;
+
+                if (last.weight && last.bmi > 25) advice += `<br><b>Weight:</b> Your BMI (${last.bmi}) indicates you are slightly overweight. Keep moving!`;
+
+                box.innerHTML = advice;
+            }, 800);
+        }
+
+        // --- EXPORT CSV ---
+        function exportCSV() {
+            if(healthData.length === 0) { showToast("No data to export", "error"); return; }
+            
+            const headers = ["Date", "Sleep(h)", "Water(ml)", "Steps", "Calories", "Weight(kg)", "BP_Sys", "BP_Dia", "BMI"];
+            const rows = healthData.map(row => 
+                [row.date, row.sleep, row.water, row.steps, row.cals || 0, row.weight || 0, row.sys, row.dia, row.bmi].join(",")
+            );
+            
+            const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `health_data_${currentUser}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("CSV Exported successfully!");
+        }
+
+        // --- PDF GENERATION ---
+        function generatePDF() {
+            if(!window.jspdf) { showToast("PDF Library loading...", "error"); return; }
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFillColor(42, 157, 143);
+            doc.rect(0, 0, 210, 40, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.text("HealthSync Wellness Report", 20, 25);
+            
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(12);
+            doc.text(`User: ${currentUser}`, 20, 50);
+            doc.text(`Date Generated: ${new Date().toLocaleDateString()}`, 20, 58);
+
+            const tableData = healthData.map(log => [
+                log.date, log.sleep, log.water, log.steps, log.cals || 0, log.weight || '-'
+            ]);
+
+            doc.autoTable({
+                head: [['Date', 'Sleep', 'Water', 'Steps', 'Cals', 'Weight']],
+                body: tableData,
+                startY: 70,
+                theme: 'grid',
+                headStyles: { fillColor: [38, 70, 83] }
+            });
+
+            doc.save('HealthSync_Report.pdf');
+            showToast("PDF Downloaded successfully!");
+        }
+    </script>
+</body>
+</html>
