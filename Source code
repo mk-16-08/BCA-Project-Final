@@ -1,0 +1,832 @@
+Great — I’ll generate a complete, ready-to-run **HealthSync – AI Wellness Tracker** project using **Flask (Python)** with HTML/CSS/JS frontend. It includes:
+
+* user auth (register/login)
+* BMI calculator
+* sleep tracker + sleep chart
+* blood-pressure logger + BP history graph
+* water intake & steps trackers
+* AI-generated personalized suggestions (example using OpenAI Chat API; swap for Gemini by replacing the function)
+* PDF health report generator (ReportLab + Matplotlib)
+* full file contents, `requirements.txt`, and run instructions
+
+Below are the project files. Copy them into a folder named `healthsync/` (or download as individual files). After the file list I give concise instructions to run.
+
+# Project structure
+
+```
+healthsync/
+├─ app.py
+├─ requirements.txt
+├─ .env.example
+├─ data/                       # created automatically
+│  └─ health.db
+├─ static/
+│  ├─ css/
+│  │  └─ styles.css
+│  ├─ js/
+│  │  └─ main.js
+│  └─ images/
+│     └─ hero-placeholder.png  (optional placeholder)
+├─ templates/
+│  ├─ base.html
+│  ├─ index.html
+│  ├─ register.html
+│  ├─ login.html
+│  ├─ dashboard.html
+│  └─ report_preview.html
+└─ README.md (instructions below)
+```
+
+---
+
+# 1) `requirements.txt`
+
+```
+Flask==2.3.3
+Werkzeug==2.3.7
+python-dotenv==1.0.0
+requests==2.31.0
+reportlab==4.0.0
+matplotlib==3.8.2
+Pillow==10.1.0
+```
+
+---
+
+# 2) `.env.example`
+
+```
+FLASK_APP=app.py
+FLASK_ENV=development
+SECRET_KEY=change-me-to-a-secure-random-string
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Rename to `.env` and fill values.
+
+---
+
+# 3) `app.py` (Flask backend — full)
+
+```python
+import os
+import sqlite3
+from datetime import datetime, date
+from io import BytesIO
+import json
+
+from flask import (Flask, g, render_template, request, redirect, url_for,
+                   flash, session, send_file)
+from werkzeug.security import generate_password_hash, check_password_hash
+from dotenv import load_dotenv
+
+# PDF & plotting
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+# Optional: simple AI call
+import requests
+
+# Load env
+load_dotenv()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DB_DIR, "health.db")
+os.makedirs(DB_DIR, exist_ok=True)
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+# ---------------- Database helpers ----------------
+def get_db():
+    db = getattr(g, "_db", None)
+    if db is None:
+        db = g._db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
+    return db
+
+def init_db():
+    db = get_db()
+    db.executescript("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sleep_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        date TEXT,
+        hours REAL,
+        notes TEXT,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS bp_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        systolic INTEGER,
+        diastolic INTEGER,
+        pulse INTEGER,
+        date TEXT,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS water_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        date TEXT,
+        amount_ml INTEGER,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS steps_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        date TEXT,
+        steps INTEGER,
+        created_at TEXT
+    );
+    """)
+    db.commit()
+
+@app.before_first_request
+def startup():
+    init_db()
+
+@app.teardown_appcontext
+def close_db(exc):
+    db = getattr(g, "_db", None)
+    if db is not None:
+        db.close()
+
+# ---------------- Auth ----------------
+def current_user():
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    db = get_db()
+    return db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+
+@app.route("/")
+def index():
+    return render_template("index.html", user=current_user())
+
+@app.route("/register", methods=["GET","POST"])
+def register():
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"]
+        if not username or not password:
+            flash("Enter username and password", "danger")
+            return redirect(url_for("register"))
+        db = get_db()
+        hashed = generate_password_hash(password)
+        try:
+            db.execute("INSERT INTO users (username,password,created_at) VALUES (?,?,?)",
+                       (username, hashed, datetime.utcnow().isoformat()))
+            db.commit()
+            flash("Registered. Please log in.", "success")
+            return redirect(url_for("login"))
+        except sqlite3.IntegrityError:
+            flash("Username already taken.", "danger")
+            return redirect(url_for("register"))
+    return render_template("register.html", user=current_user())
+
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"]
+        db = get_db()
+        row = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        if row and check_password_hash(row["password"], password):
+            session["user_id"] = row["id"]
+            flash("Logged in", "success")
+            return redirect(url_for("dashboard"))
+        flash("Invalid credentials", "danger")
+    return render_template("login.html", user=current_user())
+
+@app.route("/logout")
+def logout():
+    session.pop("user_id", None)
+    flash("Logged out", "info")
+    return redirect(url_for("index"))
+
+# ---------------- Dashboard & data ----------------
+@app.route("/dashboard", methods=["GET","POST"])
+def dashboard():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+    db = get_db()
+
+    # Handle different forms by hidden 'action'
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "bp":
+            s = int(request.form["systolic"])
+            d = int(request.form["diastolic"])
+            p = int(request.form.get("pulse") or 0)
+            db.execute("INSERT INTO bp_entries (user_id, systolic, diastolic, pulse, date, created_at) VALUES (?,?,?,?,?,?)",
+                       (user["id"], s, d, p, date.today().isoformat(), datetime.utcnow().isoformat()))
+            db.commit()
+            flash("Saved blood pressure entry", "success")
+            return redirect(url_for("dashboard"))
+
+        if action == "sleep":
+            hours = float(request.form["hours"])
+            notes = request.form.get("notes","")
+            db.execute("INSERT INTO sleep_entries (user_id,date,hours,notes,created_at) VALUES (?,?,?,?,?)",
+                       (user["id"], date.today().isoformat(), hours, notes, datetime.utcnow().isoformat()))
+            db.commit()
+            flash("Saved sleep entry", "success")
+            return redirect(url_for("dashboard"))
+
+        if action == "water":
+            amount = int(request.form["amount_ml"])
+            db.execute("INSERT INTO water_entries (user_id,date,amount_ml,created_at) VALUES (?,?,?,?)",
+                       (user["id"], date.today().isoformat(), amount, datetime.utcnow().isoformat()))
+            db.commit()
+            flash("Saved water intake", "success")
+            return redirect(url_for("dashboard"))
+
+        if action == "steps":
+            steps = int(request.form["steps"])
+            db.execute("INSERT INTO steps_entries (user_id,date,steps,created_at) VALUES (?,?,?,?)",
+                       (user["id"], date.today().isoformat(), steps, datetime.utcnow().isoformat()))
+            db.commit()
+            flash("Saved steps", "success")
+            return redirect(url_for("dashboard"))
+
+    # fetch recent data (last 30 days)
+    sleep_rows = db.execute("SELECT date, hours FROM sleep_entries WHERE user_id=? ORDER BY date ASC", (user["id"],)).fetchall()
+    bp_rows = db.execute("SELECT date, systolic, diastolic FROM bp_entries WHERE user_id=? ORDER BY date ASC", (user["id"],)).fetchall()
+    water_sum = db.execute("SELECT date, SUM(amount_ml) as total FROM water_entries WHERE user_id=? GROUP BY date ORDER BY date ASC", (user["id"],)).fetchall()
+    steps_sum = db.execute("SELECT date, SUM(steps) as total FROM steps_entries WHERE user_id=? GROUP BY date ORDER BY date ASC", (user["id"],)).fetchall()
+
+    # compute averages
+    avg_sleep = round(sum([r["hours"] for r in sleep_rows]) / (len(sleep_rows) or 1), 2) if sleep_rows else 0
+    last_bp = bp_rows[-1] if bp_rows else None
+    avg_water = round(sum([r["total"] for r in water_sum]) / (len(water_sum) or 1), 2) if water_sum else 0
+    avg_steps = round(sum([r["total"] for r in steps_sum]) / (len(steps_sum) or 1), 2) if steps_sum else 0
+
+    return render_template("dashboard.html",
+                           user=user,
+                           sleep_rows=sleep_rows,
+                           bp_rows=bp_rows,
+                           water_sum=water_sum,
+                           steps_sum=steps_sum,
+                           avg_sleep=avg_sleep,
+                           last_bp=last_bp,
+                           avg_water=avg_water,
+                           avg_steps=avg_steps)
+
+# ---------- Simple BMI API ----------
+@app.route("/api/bmi", methods=["POST"])
+def api_bmi():
+    data = request.json or {}
+    try:
+        weight = float(data.get("weight",0))
+        height_cm = float(data.get("height_cm",0))
+    except:
+        return {"error":"invalid numbers"}, 400
+    if height_cm <= 0:
+        return {"error":"invalid height"}, 400
+    h_m = height_cm/100.0
+    bmi = weight / (h_m*h_m)
+    return {"bmi": round(bmi,2)}
+
+# ---------- AI suggestions (example using OpenAI Chat completions) ----------
+def ai_suggestion_payload(user_metrics: dict) -> str:
+    # Compose a short context for the model
+    prompt = (
+        "You are a helpful health coach. Given the following user metrics, "
+        "provide a short, practical set of personalized suggestions (3-6 points) focusing on sleep, hydration, activity, and blood pressure. "
+        "Be concise and actionable.\n\n"
+        f"User metrics:\n{json.dumps(user_metrics, indent=2)}\n\nOutput:"
+    )
+    return prompt
+
+def call_openai_chat(prompt_text: str) -> str:
+    """Simple OpenAI Chat API call (use OPENAI_API_KEY). Replace with Gemini call if you prefer."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return "No AI API key configured. Set OPENAI_API_KEY in your environment."
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    body = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role":"user", "content": prompt_text}],
+        "max_tokens": 300,
+        "temperature": 0.7
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        return f"AI call failed: {e}"
+
+@app.route("/ai-suggestions")
+def ai_suggestions():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+    db = get_db()
+    # gather quick metrics for AI
+    sleep_rows = db.execute("SELECT date, hours FROM sleep_entries WHERE user_id=? ORDER BY date ASC", (user["id"],)).fetchall()
+    bp_rows = db.execute("SELECT date, systolic, diastolic FROM bp_entries WHERE user_id=? ORDER BY date ASC", (user["id"],)).fetchall()
+    water_sum = db.execute("SELECT date, SUM(amount_ml) as total FROM water_entries WHERE user_id=? GROUP BY date ORDER BY date ASC", (user["id"],)).fetchall()
+    steps_sum = db.execute("SELECT date, SUM(steps) as total FROM steps_entries WHERE user_id=? GROUP BY date ORDER BY date ASC", (user["id"],)).fetchall()
+
+    metrics = {
+        "avg_sleep": round(sum([r["hours"] for r in sleep_rows]) / (len(sleep_rows) or 1), 2) if sleep_rows else 0,
+        "last_bp": {"systolic": bp_rows[-1]["systolic"], "diastolic": bp_rows[-1]["diastolic"]} if bp_rows else None,
+        "avg_water_ml": round(sum([r["total"] for r in water_sum]) / (len(water_sum) or 1), 2) if water_sum else 0,
+        "avg_steps": round(sum([r["total"] for r in steps_sum]) / (len(steps_sum) or 1), 2) if steps_sum else 0,
+    }
+    prompt = ai_suggestion_payload(metrics)
+    ai_text = call_openai_chat(prompt)
+    return {"metrics": metrics, "suggestions": ai_text}
+
+# ---------- PDF Report ----------
+def create_sleep_chart_png(dates, hours):
+    fig, ax = plt.subplots(figsize=(6,2.5))
+    ax.plot(dates, hours, marker='o')
+    ax.set_title("Sleep (hours)")
+    ax.set_ylabel("Hours")
+    ax.set_xlabel("Date")
+    fig.autofmt_xdate()
+    buf = BytesIO()
+    plt.tight_layout()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+@app.route("/download-report")
+def download_report():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+    db = get_db()
+    sleep_rows = db.execute("SELECT date, hours FROM sleep_entries WHERE user_id=? ORDER BY date ASC", (user["id"],)).fetchall()
+    bp_rows = db.execute("SELECT date, systolic, diastolic FROM bp_entries WHERE user_id=? ORDER BY date ASC", (user["id"],)).fetchall()
+    water_sum = db.execute("SELECT date, SUM(amount_ml) as total FROM water_entries WHERE user_id=? GROUP BY date ORDER BY date ASC", (user["id"],)).fetchall()
+    steps_sum = db.execute("SELECT date, SUM(steps) as total FROM steps_entries WHERE user_id=? GROUP BY date ORDER BY date ASC", (user["id"],)).fetchall())
+
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(40, height-50, f"HealthSync Report — {user['username']}")
+
+    p.setFont("Helvetica", 12)
+    y = height - 90
+
+    # Latest BP
+    if bp_rows:
+        last_bp = bp_rows[-1]
+        p.drawString(40, y, f"Latest BP ({last_bp['date']}): {last_bp['systolic']}/{last_bp['diastolic']} mmHg")
+        y -= 20
+
+    # Averages
+    avg_sleep = round(sum([r["hours"] for r in sleep_rows]) / (len(sleep_rows) or 1), 2) if sleep_rows else 0
+    avg_water = round(sum([r["total"] for r in water_sum]) / (len(water_sum) or 1), 2) if water_sum else 0
+    avg_steps = round(sum([r["total"] for r in steps_sum]) / (len(steps_sum) or 1), 2) if steps_sum else 0
+
+    p.drawString(40, y, f"Average sleep (days recorded): {avg_sleep} hrs")
+    y -= 20
+    p.drawString(40, y, f"Average water intake (ml): {avg_water}")
+    y -= 20
+    p.drawString(40, y, f"Average steps: {avg_steps}")
+    y -= 30
+
+    # Sleep list
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(40, y, "Recent sleep entries:")
+    y -= 18
+    p.setFont("Helvetica", 11)
+    for row in reversed(sleep_rows[-10:]):
+        p.drawString(48, y, f"{row['date']}: {row['hours']} hrs")
+        y -= 14
+        if y < 120:
+            p.showPage()
+            y = height - 80
+
+    # Sleep chart
+    if len(sleep_rows) >= 2:
+        dates = [r['date'] for r in sleep_rows]
+        hours = [r['hours'] for r in sleep_rows]
+        imgbuf = create_sleep_chart_png(dates, hours)
+        img_x = 40
+        img_y = 80
+        p.drawImage(imgbuf, img_x, img_y, width=500, height=180, mask='auto')
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name="healthsync_report.pdf", mimetype="application/pdf")
+
+# ---------------- Run ----------------
+if __name__ == "__main__":
+    app.run(debug=True)
+```
+
+> Notes for AI integration:
+>
+> * The `call_openai_chat` function uses OpenAI's Chat Completions. Set `OPENAI_API_KEY` in your environment. Replace `call_openai_chat` with Gemini/Google code if you prefer (and update `.env`).
+
+---
+
+# 4) `templates/base.html`
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}HealthSync{% endblock %}</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="{{ url_for('index') }}" class="brand">HealthSync</a>
+      <nav>
+        {% if user %}
+          <a href="{{ url_for('dashboard') }}">Dashboard</a>
+          <a href="{{ url_for('download_report') }}">Download PDF</a>
+          <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">Login</a>
+          <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes">
+          {% for category, msg in messages %}
+            <li class="flash {{ category }}">{{ msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+```
+
+---
+
+# 5) `templates/index.html`
+
+```html
+{% extends "base.html" %}
+{% block title %}HealthSync — Home{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-left">
+    <h1>HealthSync — AI Wellness Tracker</h1>
+    <p>Track BMI, sleep, water, steps and blood pressure. Get AI-powered health tips and download PDF reports.</p>
+    <a class="btn" href="{{ url_for('register') }}">Get started — it's free</a>
+  </div>
+  <div class="hero-right">
+    <img src="{{ url_for('static', filename='images/hero-placeholder.png') }}" alt="Health hero" />
+  </div>
+</section>
+
+<section class="features">
+  <div class="feature">
+    <h3>BMI Calculator</h3>
+    <p>Instant client-side BMI calculator with server-side API fallback.</p>
+  </div>
+  <div class="feature">
+    <h3>Sleep Tracker</h3>
+    <p>Log sleep and view trends.</p>
+  </div>
+  <div class="feature">
+    <h3>AI Suggestions</h3>
+    <p>Personalized, practical health tips powered by a language model.</p>
+  </div>
+</section>
+{% endblock %}
+```
+
+---
+
+# 6) `templates/register.html`
+
+```html
+{% extends "base.html" %}
+{% block title %}Register — HealthSync{% endblock %}
+{% block content %}
+  <div class="auth-card">
+    <h2>Create account</h2>
+    <form method="post" class="form">
+      <label>Username
+        <input name="username" required />
+      </label>
+      <label>Password
+        <input name="password" type="password" required />
+      </label>
+      <button type="submit" class="btn">Register</button>
+    </form>
+    <p>Already have an account? <a href="{{ url_for('login') }}">Login</a></p>
+  </div>
+{% endblock %}
+```
+
+---
+
+# 7) `templates/login.html`
+
+```html
+{% extends "base.html" %}
+{% block title %}Login — HealthSync{% endblock %}
+{% block content %}
+  <div class="auth-card">
+    <h2>Login</h2>
+    <form method="post" class="form">
+      <label>Username
+        <input name="username" required />
+      </label>
+      <label>Password
+        <input name="password" type="password" required />
+      </label>
+      <button type="submit" class="btn">Login</button>
+    </form>
+    <p>No account? <a href="{{ url_for('register') }}">Register</a></p>
+  </div>
+{% endblock %}
+```
+
+---
+
+# 8) `templates/dashboard.html`
+
+```html
+{% extends "base.html" %}
+{% block title %}Dashboard — HealthSync{% endblock %}
+{% block content %}
+<h2>Welcome, {{ user.username }}</h2>
+
+<div class="grid">
+
+  <div class="card">
+    <h3>BMI Calculator</h3>
+    <label>Weight (kg) <input id="weight" type="number" step="0.1"></label>
+    <label>Height (cm) <input id="height" type="number" step="0.1"></label>
+    <button id="calc-bmi" class="btn">Calculate BMI</button>
+    <p id="bmi-result"></p>
+  </div>
+
+  <div class="card">
+    <h3>Log Blood Pressure</h3>
+    <form method="post">
+      <input type="hidden" name="action" value="bp" />
+      <label>Systolic <input name="systolic" required></label>
+      <label>Diastolic <input name="diastolic" required></label>
+      <label>Pulse <input name="pulse"></label>
+      <button type="submit" class="btn">Save BP</button>
+    </form>
+    <h4>Recent BP</h4>
+    <ul>
+      {% for bp in bp_rows %}
+        <li>{{ bp.date }} — {{ bp.systolic }}/{{ bp.diastolic }} mmHg</li>
+      {% else %}
+        <li>No entries yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Log Sleep</h3>
+    <form method="post">
+      <input type="hidden" name="action" value="sleep" />
+      <label>Hours <input name="hours" step="0.1" required></label>
+      <label>Notes <input name="notes"></label>
+      <button type="submit" class="btn">Save Sleep</button>
+    </form>
+
+    <h4>Sleep Trend (last entries)</h4>
+    <canvas id="sleepChart" width="400" height="150"></canvas>
+  </div>
+
+  <div class="card">
+    <h3>Water Intake</h3>
+    <form method="post">
+      <input type="hidden" name="action" value="water" />
+      <label>Amount (ml) <input name="amount_ml" type="number" value="250" required></label>
+      <button type="submit" class="btn">Add Water</button>
+    </form>
+    <p>Average daily: {{ avg_water }} ml</p>
+  </div>
+
+  <div class="card">
+    <h3>Steps</h3>
+    <form method="post">
+      <input type="hidden" name="action" value="steps" />
+      <label>Steps <input name="steps" type="number" required></label>
+      <button type="submit" class="btn">Add Steps</button>
+    </form>
+    <p>Average steps: {{ avg_steps }}</p>
+  </div>
+
+</div>
+
+<hr />
+<div class="card">
+  <h3>AI Suggestions</h3>
+  <button id="get-ai" class="btn">Get personalized tips</button>
+  <pre id="ai-output"></pre>
+</div>
+
+<script>
+  // Setup data for sleep chart (provided by template variables)
+  const sleepData = {{ sleep_rows|tojson }};
+</script>
+{% endblock %}
+```
+
+---
+
+# 9) `static/css/styles.css`
+
+```css
+:root{
+  --bg:#f7f7fb;
+  --card:#ffffff;
+  --accent:#1f8ef1;
+  --muted:#6b7280;
+}
+*{box-sizing:border-box}
+body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);margin:0;color:#111}
+.container{max-width:1000px;margin:0 auto;padding:20px}
+.site-header{background:#fff;border-bottom:1px solid #eee;padding:12px 0}
+.site-header .brand{font-weight:700;font-size:18px;text-decoration:none;color:#111;margin-right:16px}
+nav{float:right}
+nav a{margin-left:12px;text-decoration:none;color:#111}
+.hero{display:flex;align-items:center;gap:20px;padding:28px 0}
+.hero-right img{max-width:320px;border-radius:12px}
+.features{display:flex;gap:12px;margin-top:20px}
+.feature{background:var(--card);padding:16px;border-radius:10px;flex:1;box-shadow:0 4px 16px rgba(0,0,0,0.05)}
+.auth-card{max-width:420px;background:var(--card);padding:20px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.05)}
+.form label{display:block;margin-bottom:10px}
+input[type=text], input[type=password], input[type=number]{width:100%;padding:8px;margin-top:6px;border-radius:6px;border:1px solid #e6e6e9}
+.btn{display:inline-block;padding:8px 12px;background:var(--accent);color:#fff;border-radius:8px;text-decoration:none;border:none;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);padding:16px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.04)}
+.flashes{list-style:none;padding:0}
+.flash{padding:10px;border-radius:8px;margin-bottom:10px}
+.flash.success{background:#e6ffed}
+.flash.danger{background:#ffe6e6}
+pre#ai-output{white-space:pre-wrap;background:#f3f4f6;padding:12px;border-radius:8px}
+```
+
+---
+
+# 10) `static/js/main.js`
+
+```js
+document.addEventListener("DOMContentLoaded", function(){
+  // BMI calc
+  const calcBtn = document.getElementById("calc-bmi");
+  if(calcBtn){
+    calcBtn.addEventListener("click", async function(){
+      const w = parseFloat(document.getElementById("weight")?.value || 0);
+      const h = parseFloat(document.getElementById("height")?.value || 0);
+      if(!w || !h){ alert("Enter weight and height"); return; }
+      const bmi = w / ((h/100)*(h/100));
+      document.getElementById("bmi-result").textContent = `BMI: ${bmi.toFixed(2)}`;
+    });
+  }
+
+  // Render sleep chart using Chart.js if present
+  const sleepRows = window.sleepData || [];
+  if(document.getElementById("sleepChart")){
+    const labels = sleepRows.map(r => r.date);
+    const data = sleepRows.map(r => r.hours);
+    const ctx = document.getElementById("sleepChart").getContext("2d");
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Sleep (hours)',
+          data: data,
+          tension: 0.2,
+          fill: false,
+          pointRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true, suggestedMax: 10 }
+        }
+      }
+    });
+  }
+
+  // AI suggestions
+  const aiBtn = document.getElementById("get-ai");
+  if(aiBtn){
+    aiBtn.addEventListener("click", async function(){
+      aiBtn.disabled = true;
+      aiBtn.textContent = "Fetching...";
+      try{
+        const res = await fetch("/ai-suggestions");
+        if(!res.ok) throw new Error("AI error");
+        const data = await res.json();
+        document.getElementById("ai-output").textContent = data.suggestions || JSON.stringify(data);
+      } catch(e){
+        document.getElementById("ai-output").textContent = "Failed to fetch suggestions. See console.";
+        console.error(e);
+      } finally{
+        aiBtn.disabled = false;
+        aiBtn.textContent = "Get personalized tips";
+      }
+    });
+  }
+});
+```
+
+---
+
+# 11) Placeholder image
+
+Put any placeholder image at `static/images/hero-placeholder.png`. If you want to generate an AI hero image, use the Gemini/Nano Banana or OpenAI image API — I can provide the snippet if you want.
+
+---
+
+# 12) How to run (README instructions)
+
+1. Create and activate a virtual environment:
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate      # Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+2. Copy `.env.example` to `.env` and set:
+
+   ```
+   SECRET_KEY=some-secure-random-string
+   OPENAI_API_KEY=sk-...
+   ```
+
+   (If you don't want AI features, leave `OPENAI_API_KEY` empty — the app will return a helpful message.)
+
+3. Run the app:
+
+   ```bash
+   export FLASK_APP=app.py
+   flask run
+   # open http://127.0.0.1:5000
+   ```
+
+4. Register a user, then use the dashboard to add BP, sleep, water and steps. Click **Download PDF** to get the report.
+
+---
+
+# 13) Security & deployment notes (short)
+
+* Replace `SECRET_KEY` with a secure secret and store secrets in environment (not in repo).
+* In production, use HTTPS, a proper WSGI server (gunicorn/uwsgi) and a stronger DB (Postgres).
+* Rate-limit login attempts, validate/escape inputs when adding features.
+* If using OpenAI/Google models for many users, add caching and quota limits.
+
+---
+
+# 14) Want me to: (pick one)
+
+1. Paste a ready-to-copy ZIP download (I can package files into a zip and provide link).
+2. Add a polished UI using Tailwind and nicer components.
+3. Provide a Gemini 3.0 / Nano Banana exact snippet (server-side) for image generation integrated into the project (I’ll include authentication & save image to `static/images/`).
+4. Add unit tests or a Dockerfile for container deployment.
+
+Tell me which option (1–4) you want and I’ll produce it immediately.
